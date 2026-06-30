@@ -198,83 +198,16 @@
 </header>
 
 <div class="tab-nav">
-  <button class="tab-btn active" data-tab="tab-production">ข้อมูลการผลิต</button>
-  <button class="tab-btn" data-tab="tab-returns">ยอดรับคืน/เสียหาย</button>
+  <button class="tab-btn active" data-tab="tab-returns">ยอดรับคืน/เสียหาย</button>
   <button class="tab-btn" data-tab="tab-monthly">ภาพรวมรายเดือน</button>
 </div>
 
-<div id="tab-production" class="tab-panel active">
+<div id="tab-returns" class="tab-panel active">
 <main>
   <div class="controls" style="margin-bottom:16px;">
-    <select id="product-filter">
-      <option value="">สินค้าทั้งหมด</option>
+    <select id="rd-year-filter">
+      <option value="">ทุกปี</option>
     </select>
-    <input type="date" id="date-from">
-    <input type="date" id="date-to">
-    <button class="btn" id="refresh-btn">รีเฟรช</button>
-  </div>
-
-  <div id="status-bar">กำลังเชื่อมต่อ Supabase...</div>
-
-  <div class="kpi-grid">
-    <div class="kpi-card">
-      <div class="kpi-label">คิวผลิตรวม</div>
-      <div class="kpi-value" id="kpi-actual">–</div>
-      <div class="kpi-sub" id="kpi-actual-sub">เทียบแผน –</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">% สำเร็จตามแผน</div>
-      <div class="kpi-value" id="kpi-achieve">–</div>
-      <div class="kpi-sub" id="kpi-achieve-sub"></div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">กำลังอัดเฉลี่ย (ksc)</div>
-      <div class="kpi-value" id="kpi-strength">–</div>
-      <div class="kpi-sub" id="kpi-strength-sub">มาตรฐาน 350 ksc</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">อัตราส่วนเสียหาย</div>
-      <div class="kpi-value" id="kpi-damage">–</div>
-      <div class="kpi-sub" id="kpi-damage-sub">เทียบยอดขาย</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">สต็อกคงเหลือล่าสุด</div>
-      <div class="kpi-value" id="kpi-stock">–</div>
-      <div class="kpi-sub">หน่วย</div>
-    </div>
-  </div>
-
-  <div class="charts-grid">
-    <div class="panel">
-      <h3>แนวโน้มคิวผลิต (แผน vs จริง)</h3>
-      <canvas id="chart-production"></canvas>
-    </div>
-    <div class="panel">
-      <h3>กำลังอัดคอนกรีตรายวัน (ksc)</h3>
-      <canvas id="chart-strength"></canvas>
-    </div>
-    <div class="panel">
-      <h3>ยอดขาย vs เสียหาย</h3>
-      <canvas id="chart-sales"></canvas>
-    </div>
-    <div class="panel">
-      <h3>สัดส่วนการผลิตตามประเภทสินค้า</h3>
-      <canvas id="chart-product"></canvas>
-    </div>
-  </div>
-
-  <div class="panel" style="margin-top:16px;">
-    <h3>ตารางข้อมูลดิบ</h3>
-    <div class="table-wrap" id="table-container">
-      <div class="empty-msg">กำลังโหลดข้อมูล...</div>
-    </div>
-  </div>
-</main>
-</div>
-
-<div id="tab-returns" class="tab-panel">
-<main>
-  <div class="controls" style="margin-bottom:16px;">
     <select id="rd-type-filter">
       <option value="">ประเภททั้งหมด</option>
     </select>
@@ -339,6 +272,9 @@
 <div id="tab-monthly" class="tab-panel">
 <main>
   <div class="controls" style="margin-bottom:16px;">
+    <select id="mo-year-filter">
+      <option value="">ทุกปี</option>
+    </select>
     <input type="date" id="mo-date-from">
     <input type="date" id="mo-date-to">
     <button class="btn" id="mo-refresh-btn">รีเฟรช</button>
@@ -412,125 +348,12 @@
 // ==========================================================
 const SUPABASE_URL = "https://iudbaroxjbnfbjwhzfqj.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_9aqX4NEJIVRNuKkdE6gd1w_-DYu_TCO";
-const TABLE_NAME = "production_records";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-let allRows = [];
-let charts = {};
-
-const statusBar = document.getElementById('status-bar');
-const productFilter = document.getElementById('product-filter');
-const dateFrom = document.getElementById('date-from');
-const dateTo = document.getElementById('date-to');
-
-function setStatus(msg, isError=false){
-  statusBar.textContent = msg;
-  statusBar.classList.toggle('error', isError);
-}
 
 function fmt(num, digits=1){
   if (num === null || num === undefined || isNaN(num)) return '–';
   return Number(num).toLocaleString('th-TH', {maximumFractionDigits: digits, minimumFractionDigits: 0});
-}
-
-async function fetchData(){
-  setStatus('กำลังโหลดข้อมูล...');
-  try {
-    let query = supabaseClient.from(TABLE_NAME).select('*').order('record_date', {ascending: true});
-    const { data, error } = await query;
-    if (error) throw error;
-    allRows = data || [];
-    populateProductFilter(allRows);
-    setStatus(`โหลดข้อมูลสำเร็จ · ${allRows.length} รายการ · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`);
-    renderAll();
-  } catch (err) {
-    console.error(err);
-    setStatus('เชื่อมต่อ Supabase ไม่สำเร็จ: ' + err.message + ' (ตรวจสอบ SUPABASE_URL / ANON_KEY / ชื่อตาราง)', true);
-    allRows = [];
-    renderAll();
-  }
-}
-
-function populateProductFilter(rows){
-  const existing = new Set(Array.from(productFilter.options).map(o => o.value));
-  const products = [...new Set(rows.map(r => r.product_type).filter(Boolean))];
-  products.forEach(p => {
-    if (!existing.has(p)) {
-      const opt = document.createElement('option');
-      opt.value = p; opt.textContent = p;
-      productFilter.appendChild(opt);
-    }
-  });
-}
-
-function getFilteredRows(){
-  return allRows.filter(r => {
-    if (productFilter.value && r.product_type !== productFilter.value) return false;
-    if (dateFrom.value && r.record_date < dateFrom.value) return false;
-    if (dateTo.value && r.record_date > dateTo.value) return false;
-    return true;
-  });
-}
-
-function renderAll(){
-  const rows = getFilteredRows();
-  renderKpis(rows);
-  renderProductionChart(rows);
-  renderStrengthChart(rows);
-  renderSalesChart(rows);
-  renderProductPieChart(rows);
-  renderTable(rows);
-}
-
-function renderKpis(rows){
-  if (!rows.length){
-    ['kpi-actual','kpi-achieve','kpi-strength','kpi-damage','kpi-stock'].forEach(id => document.getElementById(id).textContent = '–');
-    document.getElementById('kpi-actual-sub').textContent = 'ไม่มีข้อมูล';
-    document.getElementById('kpi-achieve-sub').textContent = '';
-    document.getElementById('kpi-damage-sub').textContent = '';
-    return;
-  }
-  const sum = (key) => rows.reduce((a,r) => a + (Number(r[key]) || 0), 0);
-  const totalActual = sum('actual_qty');
-  const totalPlanned = sum('planned_qty');
-  const totalSales = sum('sales_qty');
-  const totalDamage = sum('damage_qty');
-  const strengths = rows.map(r => Number(r.compressive_strength)).filter(v => !isNaN(v));
-  const avgStrength = strengths.length ? strengths.reduce((a,b)=>a+b,0)/strengths.length : null;
-  const lastStock = rows[rows.length-1]?.stock_remaining;
-  const achievePct = totalPlanned ? (totalActual/totalPlanned*100) : null;
-  const damageRatio = totalSales ? (totalDamage/totalSales*100) : null;
-
-  document.getElementById('kpi-actual').textContent = fmt(totalActual);
-  document.getElementById('kpi-actual-sub').textContent = `แผน ${fmt(totalPlanned)}`;
-
-  document.getElementById('kpi-achieve').textContent = achievePct !== null ? fmt(achievePct) + '%' : '–';
-  const achieveSub = document.getElementById('kpi-achieve-sub');
-  if (achievePct !== null){
-    achieveSub.textContent = achievePct >= 100 ? '✓ เกินแผน' : achievePct >= 90 ? 'ใกล้เคียงแผน' : '⚠ ต่ำกว่าแผน';
-    achieveSub.className = 'kpi-sub ' + (achievePct >= 100 ? 'up' : achievePct >= 90 ? '' : 'down');
-  }
-
-  document.getElementById('kpi-strength').textContent = avgStrength !== null ? fmt(avgStrength) : '–';
-  const strengthSub = document.getElementById('kpi-strength-sub');
-  if (avgStrength !== null){
-    strengthSub.className = 'kpi-sub ' + (avgStrength >= 350 ? 'up' : 'down');
-    strengthSub.textContent = avgStrength >= 350 ? '✓ ผ่านมาตรฐาน 350 ksc' : '⚠ ต่ำกว่ามาตรฐาน 350 ksc';
-  }
-
-  document.getElementById('kpi-damage').textContent = damageRatio !== null ? fmt(damageRatio,2) + '%' : '–';
-  const damageSub = document.getElementById('kpi-damage-sub');
-  if (damageRatio !== null){
-    damageSub.className = 'kpi-sub ' + (damageRatio <= 0.2 ? 'up' : 'warn');
-    damageSub.textContent = damageRatio <= 0.2 ? '✓ อยู่ในเกณฑ์' : '⚠ เกินเกณฑ์ 0.2%';
-  }
-
-  document.getElementById('kpi-stock').textContent = fmt(lastStock, 0);
-}
-
-function destroyChart(key){
-  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
 }
 
 const tealPalette = ['#2dd4bf','#0ea5e9','#fbbf24','#f87171','#a78bfa','#34d399'];
@@ -549,112 +372,23 @@ function baseOptions(extra={}){
   }, extra);
 }
 
-function renderProductionChart(rows){
-  destroyChart('production');
-  const ctx = document.getElementById('chart-production');
-  if (!rows.length){ return; }
-  charts.production = new Chart(ctx, {
-    type:'bar',
-    data:{
-      labels: rows.map(r => r.record_date),
-      datasets:[
-        { label:'แผน', data: rows.map(r => r.planned_qty), backgroundColor:'#1d3a57', borderRadius:4 },
-        { label:'จริง', data: rows.map(r => r.actual_qty), backgroundColor:'#2dd4bf', borderRadius:4 },
-      ]
-    },
-    options: baseOptions()
-  });
-}
-
-function renderStrengthChart(rows){
-  destroyChart('strength');
-  const ctx = document.getElementById('chart-strength');
-  if (!rows.length){ return; }
-  charts.strength = new Chart(ctx, {
-    type:'line',
-    data:{
-      labels: rows.map(r => r.record_date),
-      datasets:[
-        { label:'กำลังอัด (ksc)', data: rows.map(r => r.compressive_strength), borderColor:'#2dd4bf', backgroundColor:'rgba(45,212,191,0.15)', tension:0.3, fill:true },
-        { label:'มาตรฐาน 350 ksc', data: rows.map(() => 350), borderColor:'#f87171', borderDash:[6,4], pointRadius:0 }
-      ]
-    },
-    options: baseOptions()
-  });
-}
-
-function renderSalesChart(rows){
-  destroyChart('sales');
-  const ctx = document.getElementById('chart-sales');
-  if (!rows.length){ return; }
-  charts.sales = new Chart(ctx, {
-    type:'line',
-    data:{
-      labels: rows.map(r => r.record_date),
-      datasets:[
-        { label:'ยอดขาย', data: rows.map(r => r.sales_qty), borderColor:'#0ea5e9', backgroundColor:'rgba(14,165,233,0.15)', tension:0.3, fill:true },
-        { label:'เสียหาย', data: rows.map(r => r.damage_qty), borderColor:'#f87171', backgroundColor:'rgba(248,113,113,0.15)', tension:0.3, fill:true }
-      ]
-    },
-    options: baseOptions()
-  });
-}
-
-function renderProductPieChart(rows){
-  destroyChart('product');
-  const ctx = document.getElementById('chart-product');
-  if (!rows.length){ return; }
-  const totals = {};
-  rows.forEach(r => { totals[r.product_type] = (totals[r.product_type]||0) + (Number(r.actual_qty)||0); });
-  const labels = Object.keys(totals);
-  charts.product = new Chart(ctx, {
-    type:'doughnut',
-    data:{
-      labels,
-      datasets:[{ data: labels.map(l => totals[l]), backgroundColor: tealPalette }]
-    },
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      plugins:{ legend:{ position:'right', labels:{ color:'#8ba3bb', font:{ family:"'IBM Plex Sans Thai'" } } } }
+// ==========================================================
+// ฟังก์ชันช่วยกรองตามปี (ใช้ร่วมกันทุกแท็บ)
+// ค่า year เป็น ค.ศ. (Gregorian) ตรงกับ record_date ที่เก็บใน Supabase
+// label แสดงเป็น พ.ศ. (Buddhist Era) เพื่อความคุ้นเคยของผู้ใช้งาน
+// ==========================================================
+function populateYearFilter(selectEl, rows, dateField='record_date'){
+  const existing = new Set(Array.from(selectEl.options).map(o => o.value));
+  const years = [...new Set(rows.map(r => r[dateField] ? r[dateField].slice(0,4) : null).filter(Boolean))].sort();
+  years.forEach(y => {
+    if (!existing.has(y)) {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = `พ.ศ. ${Number(y) + 543}`;
+      selectEl.appendChild(opt);
     }
   });
 }
-
-function renderTable(rows){
-  const container = document.getElementById('table-container');
-  if (!rows.length){
-    container.innerHTML = '<div class="empty-msg">ไม่มีข้อมูลในช่วงที่เลือก</div>';
-    return;
-  }
-  const headers = ['วันที่','สินค้า','กะ','แผน','จริง','ขนส่ง','กำลังอัด','ขาย','เสียหาย','สต็อก'];
-  let html = '<table class="data-table"><thead><tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>';
-  rows.slice().reverse().forEach(r => {
-    html += `<tr>
-      <td>${r.record_date ?? ''}</td>
-      <td>${r.product_type ?? ''}</td>
-      <td>${r.shift ?? ''}</td>
-      <td>${fmt(r.planned_qty)}</td>
-      <td>${fmt(r.actual_qty)}</td>
-      <td>${fmt(r.transport_qty)}</td>
-      <td>${fmt(r.compressive_strength)}</td>
-      <td>${fmt(r.sales_qty)}</td>
-      <td>${fmt(r.damage_qty)}</td>
-      <td>${fmt(r.stock_remaining,0)}</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  container.innerHTML = html;
-}
-
-document.getElementById('refresh-btn').addEventListener('click', fetchData);
-productFilter.addEventListener('change', renderAll);
-dateFrom.addEventListener('change', renderAll);
-dateTo.addEventListener('change', renderAll);
-
-fetchData();
-// รีเฟรชอัตโนมัติทุก 5 นาที
-setInterval(fetchData, 5 * 60 * 1000);
 
 // ==========================================================
 // สลับแท็บ
@@ -677,6 +411,7 @@ let rdCharts = {};
 let rdLoaded = false;
 
 const rdStatusBar = document.getElementById('rd-status-bar');
+const rdYearFilter = document.getElementById('rd-year-filter');
 const rdTypeFilter = document.getElementById('rd-type-filter');
 const rdDateFrom = document.getElementById('rd-date-from');
 const rdDateTo = document.getElementById('rd-date-to');
@@ -692,6 +427,7 @@ async function rdFetchData(){
     const { data, error } = await supabaseClient.from(RD_TABLE_NAME).select('*').order('record_date', {ascending: true});
     if (error) throw error;
     rdAllRows = data || [];
+    populateYearFilter(rdYearFilter, rdAllRows);
     rdPopulateTypeFilter(rdAllRows);
     rdSetStatus(`โหลดข้อมูลสำเร็จ · ${rdAllRows.length} รายการ · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`);
     rdRenderAll();
@@ -717,6 +453,7 @@ function rdPopulateTypeFilter(rows){
 
 function rdGetFilteredRows(){
   return rdAllRows.filter(r => {
+    if (rdYearFilter.value && (!r.record_date || r.record_date.slice(0,4) !== rdYearFilter.value)) return false;
     if (rdTypeFilter.value && r.return_type !== rdTypeFilter.value) return false;
     if (rdDateFrom.value && r.record_date && r.record_date < rdDateFrom.value) return false;
     if (rdDateTo.value && r.record_date && r.record_date > rdDateTo.value) return false;
@@ -865,6 +602,7 @@ function rdRenderTable(rows){
 }
 
 document.getElementById('rd-refresh-btn').addEventListener('click', rdFetchData);
+rdYearFilter.addEventListener('change', rdRenderAll);
 rdTypeFilter.addEventListener('change', rdRenderAll);
 rdDateFrom.addEventListener('change', rdRenderAll);
 rdDateTo.addEventListener('change', rdRenderAll);
@@ -882,6 +620,7 @@ let moSalesRows = [];
 let moCharts = {};
 
 const moStatusBar = document.getElementById('mo-status-bar');
+const moYearFilter = document.getElementById('mo-year-filter');
 const moDateFrom = document.getElementById('mo-date-from');
 const moDateTo = document.getElementById('mo-date-to');
 
@@ -901,6 +640,7 @@ async function moFetchData(){
     if (salesRes.error) throw salesRes.error;
     moProdRows = prodRes.data || [];
     moSalesRows = salesRes.data || [];
+    populateYearFilter(moYearFilter, moProdRows);
     moSetStatus(`โหลดข้อมูลสำเร็จ · ${moProdRows.length} เดือนการผลิต, ${moSalesRows.length} เดือนยอดขาย · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`);
     moRenderAll();
   } catch (err) {
@@ -913,6 +653,7 @@ async function moFetchData(){
 
 function moGetFilteredProd(){
   return moProdRows.filter(r => {
+    if (moYearFilter.value && (!r.record_date || r.record_date.slice(0,4) !== moYearFilter.value)) return false;
     if (moDateFrom.value && r.record_date < moDateFrom.value) return false;
     if (moDateTo.value && r.record_date > moDateTo.value) return false;
     return true;
@@ -920,6 +661,7 @@ function moGetFilteredProd(){
 }
 function moGetFilteredSales(){
   return moSalesRows.filter(r => {
+    if (moYearFilter.value && (!r.record_date || r.record_date.slice(0,4) !== moYearFilter.value)) return false;
     if (moDateFrom.value && r.record_date < moDateFrom.value) return false;
     if (moDateTo.value && r.record_date > moDateTo.value) return false;
     return true;
@@ -1060,6 +802,7 @@ function moRenderTable(prod, sales){
 }
 
 document.getElementById('mo-refresh-btn').addEventListener('click', moFetchData);
+moYearFilter.addEventListener('change', moRenderAll);
 moDateFrom.addEventListener('change', moRenderAll);
 moDateTo.addEventListener('change', moRenderAll);
 
