@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แดชบอร์ดข้อมูลการผลิต | ร่วมมิตรคอนกรีต</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0b1a2b;
+    --bg-panel:#102844;
+    --bg-panel-2:#0e2238;
+    --border:#1d3a57;
+    --teal:#2dd4bf;
+    --teal-dark:#0f766e;
+    --text:#e6eef5;
+    --text-dim:#8ba3bb;
+    --red:#f87171;
+    --green:#4ade80;
+    --amber:#fbbf24;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'IBM Plex Sans Thai', sans-serif;
+    background:linear-gradient(180deg,var(--bg) 0%, #081320 100%);
+    color:var(--text);
+    min-height:100vh;
+  }
+  header{
+    padding:24px 32px;
+    border-bottom:1px solid var(--border);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:16px;
+  }
+  header h1{
+    margin:0;
+    font-size:22px;
+    font-weight:600;
+    letter-spacing:0.3px;
+  }
+  header p{
+    margin:4px 0 0;
+    color:var(--text-dim);
+    font-size:13px;
+  }
+  .controls{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .controls input, .controls select{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:8px 12px;
+    border-radius:8px;
+    font-family:inherit;
+    font-size:13px;
+  }
+  .btn{
+    background:var(--teal-dark);
+    color:#fff;
+    border:none;
+    padding:9px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    font-family:inherit;
+    font-size:13px;
+    font-weight:500;
+    transition:background .15s;
+  }
+  .btn:hover{ background:var(--teal); color:#04201c; }
+
+  main{ padding:24px 32px 48px; max-width:1400px; margin:0 auto; }
+
+  #status-bar{
+    font-size:13px;
+    color:var(--text-dim);
+    margin-bottom:16px;
+    min-height:18px;
+  }
+  #status-bar.error{ color:var(--red); }
+
+  .kpi-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px,1fr));
+    gap:16px;
+    margin-bottom:24px;
+  }
+  .kpi-card{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px 20px;
+    position:relative;
+    overflow:hidden;
+  }
+  .kpi-card::before{
+    content:'';
+    position:absolute; left:0; top:0; bottom:0;
+    width:4px;
+    background:var(--teal);
+  }
+  .kpi-label{ font-size:12.5px; color:var(--text-dim); margin-bottom:8px; }
+  .kpi-value{ font-size:28px; font-weight:700; }
+  .kpi-sub{ font-size:12px; margin-top:6px; display:flex; align-items:center; gap:6px; }
+  .kpi-sub.up{ color:var(--green); }
+  .kpi-sub.down{ color:var(--red); }
+  .kpi-sub.warn{ color:var(--amber); }
+
+  .charts-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(420px,1fr));
+    gap:16px;
+  }
+  .panel{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px 20px;
+  }
+  .panel h3{
+    margin:0 0 14px;
+    font-size:15px;
+    font-weight:600;
+    color:var(--text);
+  }
+  .panel canvas{ max-height:280px; }
+
+  table.data-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  table.data-table th, table.data-table td{
+    padding:8px 10px;
+    border-bottom:1px solid var(--border);
+    text-align:right;
+  }
+  table.data-table th:first-child, table.data-table td:first-child,
+  table.data-table th:nth-child(2), table.data-table td:nth-child(2){
+    text-align:left;
+  }
+  table.data-table th{ color:var(--text-dim); font-weight:500; }
+  .table-wrap{ max-height:320px; overflow-y:auto; }
+
+  .empty-msg{ color:var(--text-dim); font-size:13px; text-align:center; padding:30px 0; }
+
+  footer{
+    text-align:center;
+    color:var(--text-dim);
+    font-size:12px;
+    padding:20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📊 แดชบอร์ดข้อมูลการผลิต — ร่วมมิตรคอนกรีต</h1>
+    <p>โรงงานนครชัยศรี · ข้อมูลเชื่อมต่อแบบเรียลไทม์จาก Supabase</p>
+  </div>
+  <div class="controls">
+    <select id="product-filter">
+      <option value="">สินค้าทั้งหมด</option>
+    </select>
+    <input type="date" id="date-from">
+    <input type="date" id="date-to">
+    <button class="btn" id="refresh-btn">รีเฟรช</button>
+  </div>
+</header>
+
+<main>
+  <div id="status-bar">กำลังเชื่อมต่อ Supabase...</div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">คิวผลิตรวม</div>
+      <div class="kpi-value" id="kpi-actual">–</div>
+      <div class="kpi-sub" id="kpi-actual-sub">เทียบแผน –</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">% สำเร็จตามแผน</div>
+      <div class="kpi-value" id="kpi-achieve">–</div>
+      <div class="kpi-sub" id="kpi-achieve-sub"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">กำลังอัดเฉลี่ย (ksc)</div>
+      <div class="kpi-value" id="kpi-strength">–</div>
+      <div class="kpi-sub" id="kpi-strength-sub">มาตรฐาน 350 ksc</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">อัตราส่วนเสียหาย</div>
+      <div class="kpi-value" id="kpi-damage">–</div>
+      <div class="kpi-sub" id="kpi-damage-sub">เทียบยอดขาย</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">สต็อกคงเหลือล่าสุด</div>
+      <div class="kpi-value" id="kpi-stock">–</div>
+      <div class="kpi-sub">หน่วย</div>
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="panel">
+      <h3>แนวโน้มคิวผลิต (แผน vs จริง)</h3>
+      <canvas id="chart-production"></canvas>
+    </div>
+    <div class="panel">
+      <h3>กำลังอัดคอนกรีตรายวัน (ksc)</h3>
+      <canvas id="chart-strength"></canvas>
+    </div>
+    <div class="panel">
+      <h3>ยอดขาย vs เสียหาย</h3>
+      <canvas id="chart-sales"></canvas>
+    </div>
+    <div class="panel">
+      <h3>สัดส่วนการผลิตตามประเภทสินค้า</h3>
+      <canvas id="chart-product"></canvas>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px;">
+    <h3>ตารางข้อมูลดิบ</h3>
+    <div class="table-wrap" id="table-container">
+      <div class="empty-msg">กำลังโหลดข้อมูล...</div>
+    </div>
+  </div>
+</main>
+
+<footer>ร่วมมิตรคอนกรีต จำกัด · แดชบอร์ดภายในสำหรับติดตามข้อมูลการผลิต</footer>
+
+<script>
+// ==========================================================
+// ตั้งค่าการเชื่อมต่อ Supabase
+// แทนที่ค่าด้านล่างด้วย URL และ anon key จากโปรเจกต์ Supabase ของคุณ
+// (Settings -> API ใน Supabase Dashboard)
+// ==========================================================
+const SUPABASE_URL = "https://iudbaroxjbnfbjwhzfqj.supabase.co/rest/v1/";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZGJhcm94amJuZmJqd2h6ZnFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MTU4OTAsImV4cCI6MjA5NzI5MTg5MH0.saLeoY5uOCsPcRXK5QpRX-OFkMJMQFrK6VmMUIImZBw";
+const TABLE_NAME = "production_records";
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let allRows = [];
+let charts = {};
+
+const statusBar = document.getElementById('status-bar');
+const productFilter = document.getElementById('product-filter');
+const dateFrom = document.getElementById('date-from');
+const dateTo = document.getElementById('date-to');
+
+function setStatus(msg, isError=false){
+  statusBar.textContent = msg;
+  statusBar.classList.toggle('error', isError);
+}
+
+function fmt(num, digits=1){
+  if (num === null || num === undefined || isNaN(num)) return '–';
+  return Number(num).toLocaleString('th-TH', {maximumFractionDigits: digits, minimumFractionDigits: 0});
+}
+
+async function fetchData(){
+  setStatus('กำลังโหลดข้อมูล...');
+  try {
+    let query = supabase.from(TABLE_NAME).select('*').order('record_date', {ascending: true});
+    const { data, error } = await query;
+    if (error) throw error;
+    allRows = data || [];
+    populateProductFilter(allRows);
+    setStatus(`โหลดข้อมูลสำเร็จ · ${allRows.length} รายการ · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`);
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    setStatus('เชื่อมต่อ Supabase ไม่สำเร็จ: ' + err.message + ' (ตรวจสอบ SUPABASE_URL / ANON_KEY / ชื่อตาราง)', true);
+    allRows = [];
+    renderAll();
+  }
+}
+
+function populateProductFilter(rows){
+  const existing = new Set(Array.from(productFilter.options).map(o => o.value));
+  const products = [...new Set(rows.map(r => r.product_type).filter(Boolean))];
+  products.forEach(p => {
+    if (!existing.has(p)) {
+      const opt = document.createElement('option');
+      opt.value = p; opt.textContent = p;
+      productFilter.appendChild(opt);
+    }
+  });
+}
+
+function getFilteredRows(){
+  return allRows.filter(r => {
+    if (productFilter.value && r.product_type !== productFilter.value) return false;
+    if (dateFrom.value && r.record_date < dateFrom.value) return false;
+    if (dateTo.value && r.record_date > dateTo.value) return false;
+    return true;
+  });
+}
+
+function renderAll(){
+  const rows = getFilteredRows();
+  renderKpis(rows);
+  renderProductionChart(rows);
+  renderStrengthChart(rows);
+  renderSalesChart(rows);
+  renderProductPieChart(rows);
+  renderTable(rows);
+}
+
+function renderKpis(rows){
+  if (!rows.length){
+    ['kpi-actual','kpi-achieve','kpi-strength','kpi-damage','kpi-stock'].forEach(id => document.getElementById(id).textContent = '–');
+    document.getElementById('kpi-actual-sub').textContent = 'ไม่มีข้อมูล';
+    document.getElementById('kpi-achieve-sub').textContent = '';
+    document.getElementById('kpi-damage-sub').textContent = '';
+    return;
+  }
+  const sum = (key) => rows.reduce((a,r) => a + (Number(r[key]) || 0), 0);
+  const totalActual = sum('actual_qty');
+  const totalPlanned = sum('planned_qty');
+  const totalSales = sum('sales_qty');
+  const totalDamage = sum('damage_qty');
+  const strengths = rows.map(r => Number(r.compressive_strength)).filter(v => !isNaN(v));
+  const avgStrength = strengths.length ? strengths.reduce((a,b)=>a+b,0)/strengths.length : null;
+  const lastStock = rows[rows.length-1]?.stock_remaining;
+  const achievePct = totalPlanned ? (totalActual/totalPlanned*100) : null;
+  const damageRatio = totalSales ? (totalDamage/totalSales*100) : null;
+
+  document.getElementById('kpi-actual').textContent = fmt(totalActual);
+  document.getElementById('kpi-actual-sub').textContent = `แผน ${fmt(totalPlanned)}`;
+
+  document.getElementById('kpi-achieve').textContent = achievePct !== null ? fmt(achievePct) + '%' : '–';
+  const achieveSub = document.getElementById('kpi-achieve-sub');
+  if (achievePct !== null){
+    achieveSub.textContent = achievePct >= 100 ? '✓ เกินแผน' : achievePct >= 90 ? 'ใกล้เคียงแผน' : '⚠ ต่ำกว่าแผน';
+    achieveSub.className = 'kpi-sub ' + (achievePct >= 100 ? 'up' : achievePct >= 90 ? '' : 'down');
+  }
+
+  document.getElementById('kpi-strength').textContent = avgStrength !== null ? fmt(avgStrength) : '–';
+  const strengthSub = document.getElementById('kpi-strength-sub');
+  if (avgStrength !== null){
+    strengthSub.className = 'kpi-sub ' + (avgStrength >= 350 ? 'up' : 'down');
+    strengthSub.textContent = avgStrength >= 350 ? '✓ ผ่านมาตรฐาน 350 ksc' : '⚠ ต่ำกว่ามาตรฐาน 350 ksc';
+  }
+
+  document.getElementById('kpi-damage').textContent = damageRatio !== null ? fmt(damageRatio,2) + '%' : '–';
+  const damageSub = document.getElementById('kpi-damage-sub');
+  if (damageRatio !== null){
+    damageSub.className = 'kpi-sub ' + (damageRatio <= 0.2 ? 'up' : 'warn');
+    damageSub.textContent = damageRatio <= 0.2 ? '✓ อยู่ในเกณฑ์' : '⚠ เกินเกณฑ์ 0.2%';
+  }
+
+  document.getElementById('kpi-stock').textContent = fmt(lastStock, 0);
+}
+
+function destroyChart(key){
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+}
+
+const tealPalette = ['#2dd4bf','#0ea5e9','#fbbf24','#f87171','#a78bfa','#34d399'];
+
+function baseOptions(extra={}){
+  return Object.assign({
+    responsive:true,
+    maintainAspectRatio:false,
+    plugins:{
+      legend:{ labels:{ color:'#8ba3bb', font:{ family:"'IBM Plex Sans Thai'" } } },
+    },
+    scales:{
+      x:{ ticks:{ color:'#8ba3bb' }, grid:{ color:'#1d3a57' } },
+      y:{ ticks:{ color:'#8ba3bb' }, grid:{ color:'#1d3a57' } }
+    }
+  }, extra);
+}
+
+function renderProductionChart(rows){
+  destroyChart('production');
+  const ctx = document.getElementById('chart-production');
+  if (!rows.length){ return; }
+  charts.production = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: rows.map(r => r.record_date),
+      datasets:[
+        { label:'แผน', data: rows.map(r => r.planned_qty), backgroundColor:'#1d3a57', borderRadius:4 },
+        { label:'จริง', data: rows.map(r => r.actual_qty), backgroundColor:'#2dd4bf', borderRadius:4 },
+      ]
+    },
+    options: baseOptions()
+  });
+}
+
+function renderStrengthChart(rows){
+  destroyChart('strength');
+  const ctx = document.getElementById('chart-strength');
+  if (!rows.length){ return; }
+  charts.strength = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: rows.map(r => r.record_date),
+      datasets:[
+        { label:'กำลังอัด (ksc)', data: rows.map(r => r.compressive_strength), borderColor:'#2dd4bf', backgroundColor:'rgba(45,212,191,0.15)', tension:0.3, fill:true },
+        { label:'มาตรฐาน 350 ksc', data: rows.map(() => 350), borderColor:'#f87171', borderDash:[6,4], pointRadius:0 }
+      ]
+    },
+    options: baseOptions()
+  });
+}
+
+function renderSalesChart(rows){
+  destroyChart('sales');
+  const ctx = document.getElementById('chart-sales');
+  if (!rows.length){ return; }
+  charts.sales = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: rows.map(r => r.record_date),
+      datasets:[
+        { label:'ยอดขาย', data: rows.map(r => r.sales_qty), borderColor:'#0ea5e9', backgroundColor:'rgba(14,165,233,0.15)', tension:0.3, fill:true },
+        { label:'เสียหาย', data: rows.map(r => r.damage_qty), borderColor:'#f87171', backgroundColor:'rgba(248,113,113,0.15)', tension:0.3, fill:true }
+      ]
+    },
+    options: baseOptions()
+  });
+}
+
+function renderProductPieChart(rows){
+  destroyChart('product');
+  const ctx = document.getElementById('chart-product');
+  if (!rows.length){ return; }
+  const totals = {};
+  rows.forEach(r => { totals[r.product_type] = (totals[r.product_type]||0) + (Number(r.actual_qty)||0); });
+  const labels = Object.keys(totals);
+  charts.product = new Chart(ctx, {
+    type:'doughnut',
+    data:{
+      labels,
+      datasets:[{ data: labels.map(l => totals[l]), backgroundColor: tealPalette }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{ legend:{ position:'right', labels:{ color:'#8ba3bb', font:{ family:"'IBM Plex Sans Thai'" } } } }
+    }
+  });
+}
+
+function renderTable(rows){
+  const container = document.getElementById('table-container');
+  if (!rows.length){
+    container.innerHTML = '<div class="empty-msg">ไม่มีข้อมูลในช่วงที่เลือก</div>';
+    return;
+  }
+  const headers = ['วันที่','สินค้า','กะ','แผน','จริง','ขนส่ง','กำลังอัด','ขาย','เสียหาย','สต็อก'];
+  let html = '<table class="data-table"><thead><tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+  rows.slice().reverse().forEach(r => {
+    html += `<tr>
+      <td>${r.record_date ?? ''}</td>
+      <td>${r.product_type ?? ''}</td>
+      <td>${r.shift ?? ''}</td>
+      <td>${fmt(r.planned_qty)}</td>
+      <td>${fmt(r.actual_qty)}</td>
+      <td>${fmt(r.transport_qty)}</td>
+      <td>${fmt(r.compressive_strength)}</td>
+      <td>${fmt(r.sales_qty)}</td>
+      <td>${fmt(r.damage_qty)}</td>
+      <td>${fmt(r.stock_remaining,0)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+document.getElementById('refresh-btn').addEventListener('click', fetchData);
+productFilter.addEventListener('change', renderAll);
+dateFrom.addEventListener('change', renderAll);
+dateTo.addEventListener('change', renderAll);
+
+fetchData();
+// รีเฟรชอัตโนมัติทุก 5 นาที
+setInterval(fetchData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
