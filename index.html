@@ -160,6 +160,32 @@
     font-size:12px;
     padding:20px;
   }
+
+  .tab-nav{
+    display:flex;
+    gap:8px;
+    padding:0 32px;
+    border-bottom:1px solid var(--border);
+    background:#0d2138;
+    flex-wrap:wrap;
+  }
+  .tab-btn{
+    background:transparent;
+    border:none;
+    color:var(--text-dim);
+    padding:14px 18px;
+    font-family:inherit;
+    font-size:14px;
+    font-weight:500;
+    cursor:pointer;
+    border-bottom:3px solid transparent;
+    transition:color .15s, border-color .15s;
+  }
+  .tab-btn:hover{ color:var(--text); }
+  .tab-btn.active{ color:var(--teal); border-bottom-color:var(--teal); }
+
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
 </style>
 </head>
 <body>
@@ -169,7 +195,16 @@
     <h1>📊 แดชบอร์ดข้อมูลการผลิต — ร่วมมิตรคอนกรีต</h1>
     <p>โรงงานนครชัยศรี · ข้อมูลเชื่อมต่อแบบเรียลไทม์จาก Supabase</p>
   </div>
-  <div class="controls">
+</header>
+
+<div class="tab-nav">
+  <button class="tab-btn active" data-tab="tab-production">ข้อมูลการผลิต</button>
+  <button class="tab-btn" data-tab="tab-returns">ยอดรับคืน/เสียหาย</button>
+</div>
+
+<div id="tab-production" class="tab-panel active">
+<main>
+  <div class="controls" style="margin-bottom:16px;">
     <select id="product-filter">
       <option value="">สินค้าทั้งหมด</option>
     </select>
@@ -177,9 +212,7 @@
     <input type="date" id="date-to">
     <button class="btn" id="refresh-btn">รีเฟรช</button>
   </div>
-</header>
 
-<main>
   <div id="status-bar">กำลังเชื่อมต่อ Supabase...</div>
 
   <div class="kpi-grid">
@@ -236,6 +269,71 @@
     </div>
   </div>
 </main>
+</div>
+
+<div id="tab-returns" class="tab-panel">
+<main>
+  <div class="controls" style="margin-bottom:16px;">
+    <select id="rd-type-filter">
+      <option value="">ประเภททั้งหมด</option>
+    </select>
+    <input type="date" id="rd-date-from">
+    <input type="date" id="rd-date-to">
+    <button class="btn" id="rd-refresh-btn">รีเฟรช</button>
+  </div>
+
+  <div id="rd-status-bar">กำลังเชื่อมต่อ Supabase...</div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">จำนวนรายการรับคืน/เสียหาย</div>
+      <div class="kpi-value" id="rd-kpi-count">–</div>
+      <div class="kpi-sub" id="rd-kpi-count-sub">รายการ</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">จำนวนรวม (คัน/แผ่น)</div>
+      <div class="kpi-value" id="rd-kpi-qty">–</div>
+      <div class="kpi-sub">หน่วย</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">มูลค่ารวม</div>
+      <div class="kpi-value" id="rd-kpi-amount">–</div>
+      <div class="kpi-sub">บาท</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">ประเภทที่พบบ่อยที่สุด</div>
+      <div class="kpi-value" id="rd-kpi-top-type" style="font-size:18px;">–</div>
+      <div class="kpi-sub" id="rd-kpi-top-type-sub"></div>
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="panel">
+      <h3>แนวโน้มรายเดือน (จำนวนรายการ)</h3>
+      <canvas id="rd-chart-trend"></canvas>
+    </div>
+    <div class="panel">
+      <h3>สัดส่วนตามประเภท</h3>
+      <canvas id="rd-chart-type"></canvas>
+    </div>
+    <div class="panel">
+      <h3>มูลค่ารับคืน/เสียหายรายเดือน (บาท)</h3>
+      <canvas id="rd-chart-amount"></canvas>
+    </div>
+    <div class="panel">
+      <h3>สาเหตุที่พบบ่อยที่สุด (Top 8)</h3>
+      <canvas id="rd-chart-reason"></canvas>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px;">
+    <h3>ตารางข้อมูลดิบ — รับคืน/เสียหาย</h3>
+    <div class="table-wrap" id="rd-table-container">
+      <div class="empty-msg">กำลังโหลดข้อมูล...</div>
+    </div>
+  </div>
+</main>
+</div>
 
 <footer>ร่วมมิตรคอนกรีต จำกัด · แดชบอร์ดภายในสำหรับติดตามข้อมูลการผลิต</footer>
 
@@ -246,7 +344,7 @@
 // (Settings -> API ใน Supabase Dashboard)
 // ==========================================================
 const SUPABASE_URL = "https://iudbaroxjbnfbjwhzfqj.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZGJhcm94amJuZmJqd2h6ZnFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MTU4OTAsImV4cCI6MjA5NzI5MTg5MH0.saLeoY5uOCsPcRXK5QpRX-OFkMJMQFrK6VmMUIImZBw";
+const SUPABASE_ANON_KEY = "sb_publishable_9aqX4NEJIVRNuKkdE6gd1w_-DYu_TCO";
 const TABLE_NAME = "production_records";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -490,6 +588,222 @@ dateTo.addEventListener('change', renderAll);
 fetchData();
 // รีเฟรชอัตโนมัติทุก 5 นาที
 setInterval(fetchData, 5 * 60 * 1000);
+
+// ==========================================================
+// สลับแท็บ
+// ==========================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ==========================================================
+// แท็บ: ยอดรับคืน/เสียหาย (returns_damage_records)
+// ==========================================================
+const RD_TABLE_NAME = "returns_damage_records";
+let rdAllRows = [];
+let rdCharts = {};
+let rdLoaded = false;
+
+const rdStatusBar = document.getElementById('rd-status-bar');
+const rdTypeFilter = document.getElementById('rd-type-filter');
+const rdDateFrom = document.getElementById('rd-date-from');
+const rdDateTo = document.getElementById('rd-date-to');
+
+function rdSetStatus(msg, isError=false){
+  rdStatusBar.textContent = msg;
+  rdStatusBar.classList.toggle('error', isError);
+}
+
+async function rdFetchData(){
+  rdSetStatus('กำลังโหลดข้อมูล...');
+  try {
+    const { data, error } = await supabaseClient.from(RD_TABLE_NAME).select('*').order('record_date', {ascending: true});
+    if (error) throw error;
+    rdAllRows = data || [];
+    rdPopulateTypeFilter(rdAllRows);
+    rdSetStatus(`โหลดข้อมูลสำเร็จ · ${rdAllRows.length} รายการ · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`);
+    rdRenderAll();
+  } catch (err) {
+    console.error(err);
+    rdSetStatus('เชื่อมต่อ Supabase ไม่สำเร็จ: ' + err.message + ' (ตรวจสอบชื่อตาราง returns_damage_records)', true);
+    rdAllRows = [];
+    rdRenderAll();
+  }
+}
+
+function rdPopulateTypeFilter(rows){
+  const existing = new Set(Array.from(rdTypeFilter.options).map(o => o.value));
+  const types = [...new Set(rows.map(r => r.return_type).filter(Boolean))];
+  types.forEach(t => {
+    if (!existing.has(t)) {
+      const opt = document.createElement('option');
+      opt.value = t; opt.textContent = t;
+      rdTypeFilter.appendChild(opt);
+    }
+  });
+}
+
+function rdGetFilteredRows(){
+  return rdAllRows.filter(r => {
+    if (rdTypeFilter.value && r.return_type !== rdTypeFilter.value) return false;
+    if (rdDateFrom.value && r.record_date && r.record_date < rdDateFrom.value) return false;
+    if (rdDateTo.value && r.record_date && r.record_date > rdDateTo.value) return false;
+    return true;
+  });
+}
+
+function rdRenderAll(){
+  const rows = rdGetFilteredRows();
+  rdRenderKpis(rows);
+  rdRenderTrendChart(rows);
+  rdRenderTypeChart(rows);
+  rdRenderAmountChart(rows);
+  rdRenderReasonChart(rows);
+  rdRenderTable(rows);
+}
+
+function rdRenderKpis(rows){
+  if (!rows.length){
+    document.getElementById('rd-kpi-count').textContent = '–';
+    document.getElementById('rd-kpi-qty').textContent = '–';
+    document.getElementById('rd-kpi-amount').textContent = '–';
+    document.getElementById('rd-kpi-top-type').textContent = '–';
+    document.getElementById('rd-kpi-count-sub').textContent = 'ไม่มีข้อมูล';
+    document.getElementById('rd-kpi-top-type-sub').textContent = '';
+    return;
+  }
+  const totalQty = rows.reduce((a,r) => a + (Number(r.quantity)||0), 0);
+  const totalAmount = rows.reduce((a,r) => a + (Number(r.net_amount)||0), 0);
+
+  const typeCounts = {};
+  rows.forEach(r => { if(r.return_type) typeCounts[r.return_type] = (typeCounts[r.return_type]||0)+1; });
+  const topType = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1])[0];
+
+  document.getElementById('rd-kpi-count').textContent = fmt(rows.length, 0);
+  document.getElementById('rd-kpi-count-sub').textContent = 'รายการ';
+  document.getElementById('rd-kpi-qty').textContent = fmt(totalQty, 0);
+  document.getElementById('rd-kpi-amount').textContent = fmt(totalAmount, 0);
+  if (topType){
+    document.getElementById('rd-kpi-top-type').textContent = topType[0];
+    document.getElementById('rd-kpi-top-type-sub').textContent = `${fmt(topType[1],0)} รายการ`;
+  }
+}
+
+function rdDestroyChart(key){
+  if (rdCharts[key]) { rdCharts[key].destroy(); delete rdCharts[key]; }
+}
+
+function rdGroupByMonth(rows, valueFn){
+  const groups = {};
+  rows.forEach(r => {
+    const label = r.month_label || (r.record_date ? r.record_date.slice(0,7) : 'ไม่ระบุ');
+    groups[label] = (groups[label] || 0) + valueFn(r);
+  });
+  // เรียงตาม record_date จริงถ้ามี ไม่งั้นเรียงตามชื่อ
+  const order = [];
+  const seen = new Set();
+  rows.forEach(r => {
+    const label = r.month_label || (r.record_date ? r.record_date.slice(0,7) : 'ไม่ระบุ');
+    if (!seen.has(label)) { seen.add(label); order.push(label); }
+  });
+  return { labels: order, values: order.map(l => groups[l]) };
+}
+
+function rdRenderTrendChart(rows){
+  rdDestroyChart('trend');
+  const ctx = document.getElementById('rd-chart-trend');
+  if (!rows.length){ return; }
+  const { labels, values } = rdGroupByMonth(rows, () => 1);
+  rdCharts.trend = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'จำนวนรายการ', data: values, backgroundColor:'#2dd4bf', borderRadius:4 }] },
+    options: baseOptions()
+  });
+}
+
+function rdRenderAmountChart(rows){
+  rdDestroyChart('amount');
+  const ctx = document.getElementById('rd-chart-amount');
+  if (!rows.length){ return; }
+  const { labels, values } = rdGroupByMonth(rows, r => Number(r.net_amount)||0);
+  rdCharts.amount = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[{ label:'มูลค่า (บาท)', data: values, borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,0.15)', tension:0.3, fill:true }] },
+    options: baseOptions()
+  });
+}
+
+function rdRenderTypeChart(rows){
+  rdDestroyChart('type');
+  const ctx = document.getElementById('rd-chart-type');
+  if (!rows.length){ return; }
+  const totals = {};
+  rows.forEach(r => { const t = r.return_type || 'ไม่ระบุ'; totals[t] = (totals[t]||0) + 1; });
+  const labels = Object.keys(totals);
+  rdCharts.type = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels, datasets:[{ data: labels.map(l => totals[l]), backgroundColor: tealPalette.concat(['#f472b6','#60a5fa','#fb923c']) }] },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{ legend:{ position:'right', labels:{ color:'#8ba3bb', font:{ family:"'IBM Plex Sans Thai'" } } } }
+    }
+  });
+}
+
+function rdRenderReasonChart(rows){
+  rdDestroyChart('reason');
+  const ctx = document.getElementById('rd-chart-reason');
+  if (!rows.length){ return; }
+  const totals = {};
+  rows.forEach(r => { const reason = r.reason || 'ไม่ระบุ'; totals[reason] = (totals[reason]||0) + 1; });
+  const sorted = Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  rdCharts.reason = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: sorted.map(s => s[0]),
+      datasets:[{ label:'จำนวนรายการ', data: sorted.map(s => s[1]), backgroundColor:'#0ea5e9', borderRadius:4 }]
+    },
+    options: Object.assign(baseOptions(), { indexAxis:'y' })
+  });
+}
+
+function rdRenderTable(rows){
+  const container = document.getElementById('rd-table-container');
+  if (!rows.length){
+    container.innerHTML = '<div class="empty-msg">ไม่มีข้อมูลในช่วงที่เลือก</div>';
+    return;
+  }
+  const headers = ['เดือน/ปี','เลขที่ใบรับคืน','รายการสินค้า','จำนวน','ยอดเงิน','ประเภท','สาเหตุ','ลูกค้า'];
+  let html = '<table class="data-table"><thead><tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+  rows.slice().reverse().forEach(r => {
+    html += `<tr>
+      <td>${r.month_label ?? ''}</td>
+      <td>${r.return_no ?? ''}</td>
+      <td>${r.product_item ?? ''}</td>
+      <td>${fmt(r.quantity)}</td>
+      <td>${fmt(r.net_amount)}</td>
+      <td>${r.return_type ?? ''}</td>
+      <td>${r.reason ?? ''}</td>
+      <td>${r.customer_name ?? ''}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+document.getElementById('rd-refresh-btn').addEventListener('click', rdFetchData);
+rdTypeFilter.addEventListener('change', rdRenderAll);
+rdDateFrom.addEventListener('change', rdRenderAll);
+rdDateTo.addEventListener('change', rdRenderAll);
+
+rdFetchData();
+setInterval(rdFetchData, 5 * 60 * 1000);
 </script>
 </body>
 </html>
