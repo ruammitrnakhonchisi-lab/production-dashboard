@@ -200,6 +200,7 @@
 <div class="tab-nav">
   <button class="tab-btn active" data-tab="tab-production">ข้อมูลการผลิต</button>
   <button class="tab-btn" data-tab="tab-returns">ยอดรับคืน/เสียหาย</button>
+  <button class="tab-btn" data-tab="tab-monthly">ภาพรวมรายเดือน</button>
 </div>
 
 <div id="tab-production" class="tab-panel active">
@@ -329,6 +330,72 @@
   <div class="panel" style="margin-top:16px;">
     <h3>ตารางข้อมูลดิบ — รับคืน/เสียหาย</h3>
     <div class="table-wrap" id="rd-table-container">
+      <div class="empty-msg">กำลังโหลดข้อมูล...</div>
+    </div>
+  </div>
+</main>
+</div>
+
+<div id="tab-monthly" class="tab-panel">
+<main>
+  <div class="controls" style="margin-bottom:16px;">
+    <input type="date" id="mo-date-from">
+    <input type="date" id="mo-date-to">
+    <button class="btn" id="mo-refresh-btn">รีเฟรช</button>
+  </div>
+
+  <div id="mo-status-bar">กำลังเชื่อมต่อ Supabase...</div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">คิวผลิตรวม (ทุกเดือน)</div>
+      <div class="kpi-value" id="mo-kpi-qty">–</div>
+      <div class="kpi-sub">ลบ.ม.</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">เฉลี่ยคิว/วัน</div>
+      <div class="kpi-value" id="mo-kpi-avgday">–</div>
+      <div class="kpi-sub">ลบ.ม./วัน</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">% ผลิตเฉลี่ย</div>
+      <div class="kpi-value" id="mo-kpi-pct">–</div>
+      <div class="kpi-sub" id="mo-kpi-pct-sub"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">ยอดขายรวม</div>
+      <div class="kpi-value" id="mo-kpi-sales">–</div>
+      <div class="kpi-sub">บาท</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">ยอดขายเฉลี่ย/เดือน</div>
+      <div class="kpi-value" id="mo-kpi-avgsales">–</div>
+      <div class="kpi-sub">บาท</div>
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="panel">
+      <h3>คิวผลิตรายเดือน</h3>
+      <canvas id="mo-chart-qty"></canvas>
+    </div>
+    <div class="panel">
+      <h3>% ผลิตตามแผนรายเดือน</h3>
+      <canvas id="mo-chart-pct"></canvas>
+    </div>
+    <div class="panel">
+      <h3>ยอดขายรายเดือน (บาท)</h3>
+      <canvas id="mo-chart-sales"></canvas>
+    </div>
+    <div class="panel">
+      <h3>แพสั่ง vs แพผลิต vs แพค้าง</h3>
+      <canvas id="mo-chart-pile"></canvas>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px;">
+    <h3>ตารางข้อมูลดิบ — สรุปรายเดือน</h3>
+    <div class="table-wrap" id="mo-table-container">
       <div class="empty-msg">กำลังโหลดข้อมูล...</div>
     </div>
   </div>
@@ -804,6 +871,200 @@ rdDateTo.addEventListener('change', rdRenderAll);
 
 rdFetchData();
 setInterval(rdFetchData, 5 * 60 * 1000);
+
+// ==========================================================
+// แท็บ: ภาพรวมรายเดือน (monthly_production_summary + monthly_sales)
+// ==========================================================
+const MO_PROD_TABLE = "monthly_production_summary";
+const MO_SALES_TABLE = "monthly_sales";
+let moProdRows = [];
+let moSalesRows = [];
+let moCharts = {};
+
+const moStatusBar = document.getElementById('mo-status-bar');
+const moDateFrom = document.getElementById('mo-date-from');
+const moDateTo = document.getElementById('mo-date-to');
+
+function moSetStatus(msg, isError=false){
+  moStatusBar.textContent = msg;
+  moStatusBar.classList.toggle('error', isError);
+}
+
+async function moFetchData(){
+  moSetStatus('กำลังโหลดข้อมูล...');
+  try {
+    const [prodRes, salesRes] = await Promise.all([
+      supabaseClient.from(MO_PROD_TABLE).select('*').order('record_date', {ascending:true}),
+      supabaseClient.from(MO_SALES_TABLE).select('*').order('record_date', {ascending:true})
+    ]);
+    if (prodRes.error) throw prodRes.error;
+    if (salesRes.error) throw salesRes.error;
+    moProdRows = prodRes.data || [];
+    moSalesRows = salesRes.data || [];
+    moSetStatus(`โหลดข้อมูลสำเร็จ · ${moProdRows.length} เดือนการผลิต, ${moSalesRows.length} เดือนยอดขาย · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`);
+    moRenderAll();
+  } catch (err) {
+    console.error(err);
+    moSetStatus('เชื่อมต่อ Supabase ไม่สำเร็จ: ' + err.message + ' (ตรวจสอบตาราง monthly_production_summary / monthly_sales)', true);
+    moProdRows = []; moSalesRows = [];
+    moRenderAll();
+  }
+}
+
+function moGetFilteredProd(){
+  return moProdRows.filter(r => {
+    if (moDateFrom.value && r.record_date < moDateFrom.value) return false;
+    if (moDateTo.value && r.record_date > moDateTo.value) return false;
+    return true;
+  });
+}
+function moGetFilteredSales(){
+  return moSalesRows.filter(r => {
+    if (moDateFrom.value && r.record_date < moDateFrom.value) return false;
+    if (moDateTo.value && r.record_date > moDateTo.value) return false;
+    return true;
+  });
+}
+
+function moRenderAll(){
+  const prod = moGetFilteredProd();
+  const sales = moGetFilteredSales();
+  moRenderKpis(prod, sales);
+  moRenderQtyChart(prod);
+  moRenderPctChart(prod);
+  moRenderSalesChart(sales);
+  moRenderPileChart(prod);
+  moRenderTable(prod, sales);
+}
+
+function moRenderKpis(prod, sales){
+  if (!prod.length && !sales.length){
+    ['mo-kpi-qty','mo-kpi-avgday','mo-kpi-pct','mo-kpi-sales','mo-kpi-avgsales'].forEach(id => document.getElementById(id).textContent = '–');
+    return;
+  }
+  const totalQty = prod.reduce((a,r)=>a+(Number(r.actual_qty)||0),0);
+  const avgDayVals = prod.map(r=>Number(r.avg_qty_per_day)).filter(v=>!isNaN(v));
+  const avgDay = avgDayVals.length ? avgDayVals.reduce((a,b)=>a+b,0)/avgDayVals.length : null;
+  const pctVals = prod.map(r=>Number(r.production_pct)).filter(v=>!isNaN(v));
+  const avgPct = pctVals.length ? pctVals.reduce((a,b)=>a+b,0)/pctVals.length : null;
+  const totalSales = sales.reduce((a,r)=>a+(Number(r.sales_amount)||0),0);
+  const avgSales = sales.length ? totalSales/sales.length : null;
+
+  document.getElementById('mo-kpi-qty').textContent = fmt(totalQty, 0);
+  document.getElementById('mo-kpi-avgday').textContent = avgDay !== null ? fmt(avgDay,1) : '–';
+  document.getElementById('mo-kpi-pct').textContent = avgPct !== null ? fmt(avgPct,1)+'%' : '–';
+  const pctSub = document.getElementById('mo-kpi-pct-sub');
+  if (avgPct !== null){
+    pctSub.className = 'kpi-sub ' + (avgPct >= 80 ? 'up' : avgPct >= 60 ? 'warn' : 'down');
+    pctSub.textContent = avgPct >= 80 ? '✓ ดี' : avgPct >= 60 ? '⚠ ปานกลาง' : '⚠ ต่ำ';
+  }
+  document.getElementById('mo-kpi-sales').textContent = fmt(totalSales, 0);
+  document.getElementById('mo-kpi-avgsales').textContent = avgSales !== null ? fmt(avgSales, 0) : '–';
+}
+
+function moDestroyChart(key){
+  if (moCharts[key]) { moCharts[key].destroy(); delete moCharts[key]; }
+}
+
+function moRenderQtyChart(rows){
+  moDestroyChart('qty');
+  const ctx = document.getElementById('mo-chart-qty');
+  if (!rows.length){ return; }
+  moCharts.qty = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: rows.map(r => r.month_label || r.record_date),
+      datasets:[{ label:'คิวผลิตจริง', data: rows.map(r => r.actual_qty), backgroundColor:'#2dd4bf', borderRadius:4 }]
+    },
+    options: baseOptions()
+  });
+}
+
+function moRenderPctChart(rows){
+  moDestroyChart('pct');
+  const ctx = document.getElementById('mo-chart-pct');
+  if (!rows.length){ return; }
+  moCharts.pct = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: rows.map(r => r.month_label || r.record_date),
+      datasets:[
+        { label:'% ผลิต', data: rows.map(r => r.production_pct), borderColor:'#0ea5e9', backgroundColor:'rgba(14,165,233,0.15)', tension:0.3, fill:true },
+        { label:'เป้าหมาย 100%', data: rows.map(() => 100), borderColor:'#4ade80', borderDash:[6,4], pointRadius:0 }
+      ]
+    },
+    options: baseOptions()
+  });
+}
+
+function moRenderSalesChart(rows){
+  moDestroyChart('sales');
+  const ctx = document.getElementById('mo-chart-sales');
+  if (!rows.length){ return; }
+  moCharts.sales = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: rows.map(r => r.month_label || r.record_date),
+      datasets:[{ label:'ยอดขาย (บาท)', data: rows.map(r => r.sales_amount), backgroundColor:'#fbbf24', borderRadius:4 }]
+    },
+    options: baseOptions()
+  });
+}
+
+function moRenderPileChart(rows){
+  moDestroyChart('pile');
+  const ctx = document.getElementById('mo-chart-pile');
+  const filtered = rows.filter(r => r.pile_ordered !== null || r.pile_produced !== null);
+  if (!filtered.length){ return; }
+  moCharts.pile = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: filtered.map(r => r.month_label || r.record_date),
+      datasets:[
+        { label:'แพสั่ง', data: filtered.map(r => r.pile_ordered), backgroundColor:'#1d3a57', borderRadius:4 },
+        { label:'แพผลิต', data: filtered.map(r => r.pile_produced), backgroundColor:'#2dd4bf', borderRadius:4 },
+        { label:'แพค้าง', data: filtered.map(r => r.pile_pending), backgroundColor:'#f87171', borderRadius:4 },
+      ]
+    },
+    options: baseOptions()
+  });
+}
+
+function moRenderTable(prod, sales){
+  const container = document.getElementById('mo-table-container');
+  if (!prod.length){
+    container.innerHTML = '<div class="empty-msg">ไม่มีข้อมูลในช่วงที่เลือก</div>';
+    return;
+  }
+  const salesByDate = {};
+  sales.forEach(s => { salesByDate[s.record_date] = s.sales_amount; });
+
+  const headers = ['เดือน','คิวผลิตจริง','วันผลิต','เฉลี่ย/วัน','คิวขนส่ง','% ผลิต','แพสั่ง','แพผลิต','แพค้าง','ยอดขาย'];
+  let html = '<table class="data-table"><thead><tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+  prod.slice().reverse().forEach(r => {
+    html += `<tr>
+      <td>${r.month_label ?? ''}</td>
+      <td>${fmt(r.actual_qty)}</td>
+      <td>${fmt(r.production_days,0)}</td>
+      <td>${fmt(r.avg_qty_per_day)}</td>
+      <td>${fmt(r.transport_qty)}</td>
+      <td>${fmt(r.production_pct)}</td>
+      <td>${fmt(r.pile_ordered,0)}</td>
+      <td>${fmt(r.pile_produced,0)}</td>
+      <td>${fmt(r.pile_pending,0)}</td>
+      <td>${fmt(salesByDate[r.record_date],0)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+document.getElementById('mo-refresh-btn').addEventListener('click', moFetchData);
+moDateFrom.addEventListener('change', moRenderAll);
+moDateTo.addEventListener('change', moRenderAll);
+
+moFetchData();
+setInterval(moFetchData, 5 * 60 * 1000);
 </script>
 </body>
 </html>
